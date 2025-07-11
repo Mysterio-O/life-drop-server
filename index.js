@@ -261,11 +261,32 @@ async function run() {
             }
         });
 
+        app.get('/donation-request/:id', async (req, res) => {
+            const { id } = req.params;
+            if (!id) {
+                return res.status(400).send({ message: "request id not found!" })
+            }
+
+            try {
+                const request = await requestCollection.findOne({ _id: new ObjectId(id) });
+                if (!request) {
+                    return res.status(404).send({ message: "no donation request found with this id->", id });
+                }
+                res.status(200).json(request);
+            }
+            catch (error) {
+                console.error("error getting donation request", error);
+                res.status(500).send({ message: "error getting donation request", error });
+            }
+
+        })
+
         app.patch('/donation-requests/:id', async (req, res) => {
             const { id } = req.params;
             const { status } = req.body;
 
             console.log(status);
+
             if (!id) {
                 return res.status(400).send({ message: "donation request id not found" });
             }
