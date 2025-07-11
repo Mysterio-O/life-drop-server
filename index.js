@@ -192,7 +192,7 @@ async function run() {
 
         });
 
-        // GET /donation-requests
+        // GET /donation-requests 
         app.get("/donation-requests", async (req, res) => {
             try {
                 const email = req.query.email;
@@ -207,6 +207,9 @@ async function run() {
                 const filter = { requesterEmail: email };
                 if (status && status !== "all") {
                     filter.status = status;
+                }
+                if (status === 'pending') {
+
                 }
 
                 const totalCount = await requestCollection.countDocuments(filter);
@@ -226,6 +229,38 @@ async function run() {
             }
         });
 
+        app.get("/donation-requests/pending", async (req, res) => {
+            try {
+                const page = parseInt(req.query.page) || 1;
+                const limit = parseInt(req.query.limit) || 10;
+                const skip = (page - 1) * limit;
+
+                const filter = {
+                    status: 'pending'
+                };
+
+                const total = await requestCollection.countDocuments(filter);
+                const result = await requestCollection
+                    .find(filter)
+                    .sort({
+                        donationDate: 1,
+                        donationTime: 1
+                    })
+                    .skip(skip)
+                    .limit(limit)
+                    .toArray();
+
+                if (!result || result.length === 0) {
+                    return res.status(404).send({ message: 'no pending donation request found', total: 0, result: [] });
+                }
+
+                res.status(200).send({ message: 'requests found', total, result });
+            } catch (error) {
+                console.error('error getting pending donation request data', error);
+                res.status(500).send({ message: "error getting pending donation request data" });
+            }
+        });
+
         app.patch('/donation-requests/:id', async (req, res) => {
             const { id } = req.params;
             const { status } = req.body;
@@ -237,7 +272,7 @@ async function run() {
             if (!status) {
                 return res.status(400).send({ message: "status not found" });
             }
-            
+
 
             try {
                 const result = await requestCollection.updateOne(
@@ -279,4 +314,3 @@ app.get('/', (req, res) => {
 app.listen(port, () => {
     console.log(`Example app listening on port ${port}`)
 })
-
