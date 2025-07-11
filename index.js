@@ -190,7 +190,74 @@ async function run() {
             }
 
 
+        });
+
+        // GET /donation-requests
+        app.get("/donation-requests", async (req, res) => {
+            try {
+                const email = req.query.email;
+                const status = req.query.status;
+                const page = parseInt(req.query.page) || 1;
+                const limit = parseInt(req.query.limit) || 10;
+
+                if (!email) {
+                    return res.status(400).send({ message: "Email is required" });
+                }
+
+                const filter = { requesterEmail: email };
+                if (status && status !== "all") {
+                    filter.status = status;
+                }
+
+                const totalCount = await requestCollection.countDocuments(filter);
+                const totalPages = Math.ceil(totalCount / limit);
+
+                const requests = await requestCollection
+                    .find(filter)
+                    .sort({ createdAt: -1 }) // optional: latest first
+                    .skip((page - 1) * limit)
+                    .limit(limit)
+                    .toArray();
+
+                res.send({ requests, totalPages });
+            } catch (error) {
+                console.error("Error fetching donation requests:", error.message);
+                res.status(500).send({ message: "Internal Server Error" });
+            }
+        });
+
+        app.patch('/donation-requests/:id', async (req, res) => {
+            const { id } = req.params;
+            const { status } = req.body;
+
+            console.log(status);
+            if (!id) {
+                return res.status(400).send({ message: "donation request id not found" });
+            }
+            if (!status) {
+                return res.status(400).send({ message: "status not found" });
+            }
+            
+
+            try {
+                const result = await requestCollection.updateOne(
+                    { _id: new ObjectId(id) },
+                    {
+                        $set: { status: status }
+                    }
+                );
+                if (!result) {
+                    return res.status(404).send({ message: 'request not found!' });
+                }
+                res.status(201).send({ message: 'status updated', result });
+            }
+            catch (error) {
+                console.error("error updating donation request status", error);
+                res.status(500).send({ message: "error updating donation request status" });
+            }
+
         })
+
 
 
 
