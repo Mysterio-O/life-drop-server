@@ -283,7 +283,7 @@ async function run() {
 
         app.patch('/donation-requests/:id', async (req, res) => {
             const { id } = req.params;
-            const { status } = req.body;
+            const { status, donorMobile, donorEmail, donorName } = req.body;
 
             console.log(status);
 
@@ -293,14 +293,54 @@ async function run() {
             if (!status) {
                 return res.status(400).send({ message: "status not found" });
             }
+            let filter = {};
+
+            if (status === 'done') {
+                filter = {
+                    $set: {
+                        status: status,
+                        donated_by: donorEmail,
+                        donated_at: new Date().toISOString()
+                    }
+                }
+            }
+
+            if (status === 'canceled') {
+                filter = {
+                    $set: {
+                        status: status,
+                        canceled_at: new Date().toISOString(),
+                        donor_email: null,
+                        donor_name: null,
+                        donor_number: null
+                    }
+                }
+            }
+
+            if (status === 'in_progress') {
+                filter = {
+                    $set: {
+                        status: status,
+                        donor_number: donorMobile,
+                        donor_email: donorEmail,
+                        donor_name: donorName
+                    }
+                }
+            } else if (status === 'in_progress' && !donorMobile) {
+                filter = {
+                    $set: {
+                        status: status,
+                        donor_email: donorEmail,
+                        donor_name: donorName
+                    }
+                }
+            }
 
 
             try {
                 const result = await requestCollection.updateOne(
                     { _id: new ObjectId(id) },
-                    {
-                        $set: { status: status }
-                    }
+                    filter
                 );
                 if (!result) {
                     return res.status(404).send({ message: 'request not found!' });
