@@ -8,6 +8,15 @@ const port = 3000;
 app.use(express.json());
 app.use(cors());
 
+const admin = require("firebase-admin");
+
+const serviceAccount = require("./lifedrop-firebase-adminsdk.json");
+
+admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount)
+});
+
+
 
 const client = new MongoClient(process.env.MONGO_URI, {
     serverApi: {
@@ -22,12 +31,57 @@ const db = client.db('lifeDropDB');
 
 const userCollection = db.collection('users');
 const requestCollection = db.collection('requests');
+const blogCollection = db.collection('blogs');
 
 
 async function run() {
     try {
         // Connect the client to the server	(optional starting in v4.7)
         // await client.connect();
+
+        // middlewares
+
+        const verifyFBToken = async (req, res, next) => {
+            const authHeader = req.headers.authorization;
+            if (!authHeader) {
+                return res.status(401).send({ message: 'unauthorized access' })
+            }
+
+            const token = authHeader.split(' ')[1];
+            if (!token) {
+                return res.status(403).send({ message: 'forbidden access' });
+            }
+
+            try {
+                const decoded = await admin.auth().verifyIdToken(token);
+                req.decoded = decoded;
+                next();
+            }
+            catch (error) {
+                res.status(500).send({ message: 'internal server error' });
+            }
+
+        };
+
+        const verifyAdmin = async (req, res, next) => {
+            const email = req.decoded.email;
+            const result = await userCollection.findOne({ email });
+            if (!result || result.role !== 'admin') {
+                return res.status(403).send({ message: 'forbidden access' });
+            }
+            next();
+        };
+
+        const verifyShared = async (req, res, next) => {
+            const email = req.decoded.email;
+            const user = await userCollection.findOne({ email });
+            if (user.role === 'admin' || user.role === 'volunteer' && user) {
+                next();
+            } else {
+                return res.status(403).send({ message: 'forbidden access' });
+            }
+        }
+
 
         // users api
         app.post('/users', async (req, res) => {
@@ -55,7 +109,7 @@ async function run() {
 
         });
 
-        app.get('/user', async (req, res) => {
+        app.get('/user', verifyFBToken, async (req, res) => {
             try {
                 const { email } = req.query;
                 console.log('email is->', email);
@@ -78,12 +132,29 @@ async function run() {
             }
         });
 
-        app.get('/users', async (req, res) => {
 
+        // get user role
+
+        app.get('/user/:email/role', verifyFBToken, async (req, res) => {
+            const { email } = req.params;
+            if (!email) {
+                return res.status(400).send({ message: 'email not found' });
+            }
+            try {
+                const user = await userCollection.findOne({ email });
+                if (!user) {
+                    return res.status(404).send({ message: 'user not found' });
+                }
+                res.status(200).send({ message: 'user role found', role: user.role });
+            }
+            catch (error) {
+                console.error('error getting user role', error);
+                res.status(500).send({ message: "server error getting user role", error });
+            }
         })
 
         // PATCH /user/update/:id
-        app.patch('/user/update/:id', async (req, res) => {
+        app.patch('/user/update/:id', verifyFBToken, async (req, res) => {
             const userId = req.params.id;
             const updateFields = req.body;
 
@@ -122,7 +193,7 @@ async function run() {
 
 
         // request apis
-        app.post('/create-request', async (req, res) => {
+        app.post('/create-request', verifyFBToken, async (req, res) => {
             const requestInfo = req.body;
             if (!requestInfo) {
                 return res.status(400).send({ message: 'no request information found!' });
@@ -139,7 +210,7 @@ async function run() {
 
         });
 
-        app.get('/requests', async (req, res) => {
+        app.get('/requests', verifyFBToken, async (req, res) => {
             const { email, limit, order } = req.query;
 
             if (!email) {
@@ -175,7 +246,7 @@ async function run() {
             }
         });
 
-        app.delete('/donation-requests/:id', async (req, res) => {
+        app.delete('/donation-requests/:id', verifyFBToken, async (req, res) => {
             const { id } = req.params;
             if (!id) {
                 return res.status(400).send({ message: 'request id not found!' });
@@ -197,7 +268,7 @@ async function run() {
         });
 
         // GET /donation-requests 
-        app.get("/donation-requests", async (req, res) => {
+        app.get("/donation-requests", verifyFBToken, async (req, res) => {
             try {
                 const email = req.query.email;
                 const status = req.query.status;
@@ -211,9 +282,6 @@ async function run() {
                 const filter = { requesterEmail: email };
                 if (status && status !== "all") {
                     filter.status = status;
-                }
-                if (status === 'pending') {
-
                 }
 
                 const totalCount = await requestCollection.countDocuments(filter);
@@ -265,7 +333,7 @@ async function run() {
             }
         });
 
-        app.get('/donation-request/:id', async (req, res) => {
+        app.get('/donation-request/:id', verifyFBToken, async (req, res) => {
             const { id } = req.params;
             if (!id) {
                 return res.status(400).send({ message: "request id not found!" })
@@ -285,7 +353,7 @@ async function run() {
 
         })
 
-        app.patch('/donation-requests/:id', async (req, res) => {
+        app.patch('/donation-requests/:id', verifyFBToken, async (req, res) => {
             const { id } = req.params;
             const { status, donorMobile, donorEmail, donorName } = req.body;
 
@@ -357,6 +425,78 @@ async function run() {
             }
 
         });
+
+
+        // admin apis
+
+
+
+
+
+
+
+
+
+        // shared controlled apis
+
+        app.get('/all-blood-donation-request', verifyFBToken, verifyShared, async (req, res) => {
+            try {
+                console.log("entered");
+                const status = req.query.status;
+                const page = parseInt(req.query.page) || 1;
+                const limit = parseInt(req.query.limit) || 10;
+                console.log(status);
+                let filter = {};
+
+                if (status && status !== 'all') {
+                    filter.status = status;
+                }
+                console.log(filter)
+                const totalCount = await requestCollection.countDocuments(filter);
+
+                const totalPages = Math.ceil(totalCount / limit);
+                const requests = await requestCollection
+                    .find(filter)
+                    .sort({ donationDate: -1 })
+                    .skip((page - 1) * limit)
+                    .limit(limit)
+                    .toArray();
+                if (!requests) {
+                    return res.status(404).send({ message: "no requst found with this filter" });
+                }
+                res.status(200).send({ message: 'requests found', requests, totalPages });
+
+            }
+            catch (error) {
+                console.error("Error fetching all donation requests:", error.message);
+                res.status(500).send({ message: "Internal Server Error in fetching all donation requests" });
+            }
+        });
+
+        // blog apis
+        app.post('/create-blog', async (req, res) => {
+            const blogData = req.body || {};
+            console.log('top of first condition',blogData);
+            if (!blogData) {
+                return res.status(400).send({ message: "blog info not found" });
+            }else{
+                blogData.status = "draft";
+                blogData.created_at = new Date().toISOString();
+            }
+
+            console.log(blogData);
+            try {
+                const result = await blogCollection.insertOne(blogData);
+                if (result.insertedId) {
+                    return res.status(201).send({ message: "blog added to database", result });
+                }
+            }
+            catch (error) {
+                console.error("error adding new blog", error);
+                res.status(500).send({ message: "internal server error adding new blog", error });
+            }
+        })
+
 
 
         // search donor api 
