@@ -78,6 +78,10 @@ async function run() {
             }
         });
 
+        app.get('/users', async (req, res) => {
+
+        })
+
         // PATCH /user/update/:id
         app.patch('/user/update/:id', async (req, res) => {
             const userId = req.params.id;
@@ -352,7 +356,42 @@ async function run() {
                 res.status(500).send({ message: "error updating donation request status" });
             }
 
-        })
+        });
+
+
+        // search donor api 
+        app.get('/donors', async (req, res) => {
+            try {
+                const { bloodGroup, district, upazila, page = 1, limit = 10 } = req.query;
+                const skip = (page - 1) * limit;
+
+                const query = { role: "donor" };
+
+                if (bloodGroup) query.blood_group = bloodGroup;
+                if (district) query.district = district;
+                if (upazila) query.upazila = upazila;
+
+                const donors = await userCollection.find(query)
+                    .skip(skip)
+                    .limit(parseInt(limit))
+                    .toArray();
+                if (!donors) {
+                    return res.status(404).send({ message: "no donor found in this area" });
+                }
+
+                const total = await userCollection.countDocuments(query);
+
+                res.status(200).send({
+                    donors,
+                    total,
+                    page: parseInt(page),
+                    pages: Math.ceil(total / limit)
+                });
+            } catch (error) {
+                console.error('Error fetching donors:', error);
+                res.status(500).send({ error: 'Internal server error' });
+            }
+        });
 
 
 
