@@ -476,7 +476,7 @@ async function run() {
 
 
 
-        // blog apis
+        // blog apis (admin + shared)
         app.post('/create-blog', verifyFBToken, verifyShared, async (req, res) => {
             const blog = req.body || {};
             const blogData = { ...blog };
@@ -502,7 +502,7 @@ async function run() {
             }
         });
 
-        app.get('/all-blogs', async (req, res) => {
+        app.get('/all-blogs', verifyFBToken, verifyShared, async (req, res) => {
             const { status, page = 1, limit = 10 } = req.query;
             const query = {};
             if (status && ['draft', 'published'].includes(status)) {
@@ -545,6 +545,7 @@ async function run() {
             }
         })
 
+        // blog update (draft / published)
         app.patch("/blogs/:id/status", verifyFBToken, verifyAdmin, async (req, res) => {
             const { id } = req.params;
             const { status } = req.body;
@@ -574,9 +575,8 @@ async function run() {
             }
         });
 
-        // update blog
-
-        app.patch('/blog/:id', async (req, res) => {
+        // update blog (blog body)
+        app.patch('/blog/:id', verifyFBToken, verifyShared, async (req, res) => {
             const { id } = req.params;
             const blog = req.body || {};
             const blogData = { ...blog };
@@ -607,7 +607,7 @@ async function run() {
             }
 
 
-        })
+        });
 
         app.delete('/blogs/:id', verifyFBToken, verifyAdmin, async (req, res) => {
             const { id } = req.params;
@@ -624,6 +624,72 @@ async function run() {
             catch (error) {
                 console.error("error deleting blog", error);
                 res.status(500).send({ message: "error deleting blog", error });
+            }
+        });
+
+        // blog -- public
+
+        app.get('/all-blogs-public', async (req, res) => {
+            try {
+                const blogs = await blogCollection.find(
+                    { status: 'published' }
+                ).toArray();
+                if (!blogs) {
+                    return res.status(404).send({ message: "No blogs avaiable now." });
+                } else {
+                    res.status(200).send({ message: "blogs found", blogs });
+                }
+            }
+            catch (error) {
+                console.error("error getting all blogs (public)", error);
+                res.status(500).send({ message: "error getting all blogs (public)", error });
+            }
+        });
+
+        app.patch('/like-blog', async (req, res) => {
+            const { blogId, email } = req.body;
+            // console.log(body);
+            if (!blogId || !email) {
+                return res.status(400).send({ message: 'missing body' });
+            };
+            const blog = await blogCollection.findOne({ _id: new ObjectId(blogId) });
+            const isLiked = blog.liked_by.includes(email);
+            let result;
+            try {
+                const blog = await blogCollection.findOne({ _id: new ObjectId(blogId) });
+                const isLiked = blog.liked_by.includes(email);
+                let result;
+                if (!isLiked) {
+                    result = await blogCollection.updateOne(
+                        { _id: new ObjectId(blogId), status: 'published' },
+                        {
+                            $addToSet: {
+                                liked_by: email
+                            }
+                        }
+                    );
+                    res.status(200).send({ action: "liked", result });
+                } else {
+                    result = await blogCollection.updateOne(
+                        { _id: new ObjectId(blogId), status: "published" },
+                        {
+                            $pull: { liked_by: email }
+                        }
+                    );
+                    res.status(200).send({ action: 'disliked', result })
+                }
+
+                if (result.matchedCount === 0) {
+                    return res.status(404).send({ message: "blog not found" });
+                }
+                if (result.modifiedCount === 0) {
+                    return res.status(200).send({ message: "already liked" })
+                }
+                res.status(201).send({ message: "liked successfully", result });
+            }
+            catch (error) {
+                console.error("error liking blog", error);
+                res.status(500).send({ message: "error liking blog", error });
             }
         })
 
