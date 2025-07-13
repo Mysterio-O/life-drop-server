@@ -659,6 +659,7 @@ async function run() {
                 const blog = await blogCollection.findOne({ _id: new ObjectId(blogId) });
                 const isLiked = blog.liked_by.includes(email);
                 let result;
+                let response;
                 if (!isLiked) {
                     result = await blogCollection.updateOne(
                         { _id: new ObjectId(blogId), status: 'published' },
@@ -668,7 +669,7 @@ async function run() {
                             }
                         }
                     );
-                    res.status(200).send({ action: "liked", result });
+                    response = ({ action: "liked", result });
                 } else {
                     result = await blogCollection.updateOne(
                         { _id: new ObjectId(blogId), status: "published" },
@@ -676,16 +677,16 @@ async function run() {
                             $pull: { liked_by: email }
                         }
                     );
-                    res.status(200).send({ action: 'disliked', result })
+                    response = ({ action: 'disliked', result })
                 }
 
                 if (result.matchedCount === 0) {
                     return res.status(404).send({ message: "blog not found" });
                 }
                 if (result.modifiedCount === 0) {
-                    return res.status(200).send({ message: "already liked" })
+                    response = { message: isLiked ? 'Already unliked' : 'Already liked by this user', action: isLiked ? 'unlike' : 'like' }
                 }
-                res.status(201).send({ message: "liked successfully", result });
+                return res.status(200).send(response);
             }
             catch (error) {
                 console.error("error liking blog", error);
