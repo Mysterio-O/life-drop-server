@@ -66,6 +66,7 @@ async function run() {
         const verifyAdmin = async (req, res, next) => {
             const email = req.decoded.email;
             const result = await userCollection.findOne({ email });
+            console.log('role from admin verify middleware', result);
             if (!result || result.role !== 'admin') {
                 return res.status(403).send({ message: 'forbidden access' });
             }
@@ -473,13 +474,16 @@ async function run() {
             }
         });
 
+
+
         // blog apis
-        app.post('/create-blog', async (req, res) => {
-            const blogData = req.body || {};
-            console.log('top of first condition',blogData);
+        app.post('/create-blog', verifyFBToken, verifyShared, async (req, res) => {
+            const blog = req.body || {};
+            const blogData = { ...blog };
+            console.log('top of first condition', blogData);
             if (!blogData) {
                 return res.status(400).send({ message: "blog info not found" });
-            }else{
+            } else {
                 blogData.status = "draft";
                 blogData.created_at = new Date().toISOString();
             }
@@ -487,6 +491,7 @@ async function run() {
             console.log(blogData);
             try {
                 const result = await blogCollection.insertOne(blogData);
+                console.log(result)
                 if (result.insertedId) {
                     return res.status(201).send({ message: "blog added to database", result });
                 }
@@ -494,6 +499,76 @@ async function run() {
             catch (error) {
                 console.error("error adding new blog", error);
                 res.status(500).send({ message: "internal server error adding new blog", error });
+            }
+        });
+
+        app.get('/all-blogs', async (req, res) => {
+            const { status, page = 1, limit = 10 } = req.query;
+            const query = {};
+            if (status && ['draft', 'published'].includes(status)) {
+                query.status = status;
+            }
+            try {
+                const blogs = await blogCollection.find(query)
+                    .skip((page - 1) * limit)
+                    .limit(parseInt(limit))
+                    .sort({ created_at: -1 })
+                    .toArray();
+                if (!blogs) {
+                    return res.status(404).send({ message: "blogs not found" });
+                }
+                res.status(200).send({ message: "blogs found", blogs });
+            }
+            catch (error) {
+                console.error('error getting blogs data', error);
+                rs.status(500).send({ message: "error getting blogs data", error });
+            }
+        });
+
+        app.patch("/blogs/:id/status", verifyFBToken, verifyAdmin, async (req, res) => {
+            const { id } = req.params;
+            const { status } = req.body;
+            if (!status) {
+                return res.status(400).send({ message: "new status not found!" });
+            }
+            if (!id) {
+                return res.status(400).send({ message: "blog id not found!" });
+            }
+            try {
+                const result = await blogCollection.updateOne(
+                    { _id: new ObjectId(id) },
+                    {
+                        $set: {
+                            status: status
+                        }
+                    }
+                );
+                if (result.modifiedCount < 1) {
+                    return res.status(404).send({ message: "no changes found in the blog collection" });
+                }
+                res.status(201).send({ message: 'updated blog status', result });
+            }
+            catch (error) {
+                console.error("error updating blog status", error);
+                res.status(500).send({ message: "error updating blog status", error });
+            }
+        });
+
+        app.delete('/blogs/:id', async (req, res) => {
+            const { id } = req.params;
+            if (!id) {
+                return res.status(400).send({ message: 'blog id not found' });
+            }
+            try {
+                const result = await blogCollection.deleteOne({ _id: new ObjectId(id) });
+                if (result.deletedCount < 1) {
+                    return res.status(404).send({ message: 'blog not deleted' });
+                }
+                res.status(204).send({ message: "blog deleted" });
+            }
+            catch (error) {
+                console.error("error deleting blog", error);
+                res.status(500).send({ message: "error deleting blog", error });
             }
         })
 
@@ -553,4 +628,4 @@ app.get('/', (req, res) => {
 
 app.listen(port, () => {
     console.log(`Example app listening on port ${port}`)
-})
+});
