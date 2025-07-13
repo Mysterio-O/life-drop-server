@@ -525,6 +525,26 @@ async function run() {
             }
         });
 
+        // single blog get api
+
+        app.get('/blog', async (req, res) => {
+            const { id } = req.query;
+            if (!id) {
+                return res.status(400).send({ message: "blog id not found!" });
+            }
+            try {
+                const blog = await blogCollection.findOne({ _id: new ObjectId(id) });
+                if (!blog) {
+                    return res.status(404).send({ message: 'no blog found with this id' });
+                }
+                res.status(200).send({ message: 'blog found!', blog });
+            }
+            catch (error) {
+                console.error("error getting single blog data", error);
+                res.status(500).send({ message: "error getting single blog data", error });
+            }
+        })
+
         app.patch("/blogs/:id/status", verifyFBToken, verifyAdmin, async (req, res) => {
             const { id } = req.params;
             const { status } = req.body;
@@ -554,7 +574,42 @@ async function run() {
             }
         });
 
-        app.delete('/blogs/:id', async (req, res) => {
+        // update blog
+
+        app.patch('/blog/:id', async (req, res) => {
+            const { id } = req.params;
+            const blog = req.body || {};
+            const blogData = { ...blog };
+            if (!id) {
+                return res.status(400).send({ message: 'blog id not found' });
+            }
+            if (!blog || !blogData) {
+                return res.status(400).send({ message: 'blog data not found' });
+            } else {
+                blogData.updated_at = new Date().toISOString();
+            }
+            try {
+                const result = await blogCollection.updateOne(
+                    { _id: new ObjectId(id) },
+                    {
+                        $set: { ...blogData }
+                    }
+                );
+                console.log('result from blog update->', result);
+                if (!result || result.modifiedCount < 1) {
+                    return res.status(404).send({ message: 'update incomplete' });
+                }
+                res.status(200).send({ message: "blog updated", result })
+            }
+            catch (error) {
+                console.error("error updating blog data", error);
+                res.status(500).send({ message: "error updating blog data", error })
+            }
+
+
+        })
+
+        app.delete('/blogs/:id', verifyFBToken, verifyAdmin, async (req, res) => {
             const { id } = req.params;
             if (!id) {
                 return res.status(400).send({ message: 'blog id not found' });
