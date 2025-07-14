@@ -134,6 +134,39 @@ async function run() {
         });
 
 
+        // get user profile picture
+        app.get('/user/profile-picture/:email',verifyFBToken, async (req, res) => {
+            const { email } = req.params;
+            // console.log(email);
+            let userInfo = {}
+            if (!email) {
+                return res.status(400).send({ message: 'blog authors email not found' });
+            }
+            try {
+                const user = await userCollection.findOne({ email });
+                if (!user) {
+                    return res.status(404).send({ message: "no user found" });
+                }
+                const photo = user?.photoURL;
+                const name = user?.name;
+                if (!photo) {
+                    const defaultAvatar = 'https://i.ibb.co/bRgZG4Dk/user-profile-icon-vector-avatar-600nw-2247726673.webp'
+                    userInfo.photoURL = defaultAvatar;
+                    userInfo.name = name
+                    return res.status(200).send({ message: 'user  photo not found', userInfo });
+                } else {
+                    userInfo.photoURL = photo;
+                    userInfo.name = name;
+                    res.status(200).send({ message: "photoURL found", userInfo });
+                }
+            }
+            catch (error) {
+                console.error("error getting user photoURL", error);
+                res.status(500).send({ message: "error getting user photoURL", error });
+            }
+        })
+
+
         // get user role
 
         app.get('/user/:email/role', verifyFBToken, async (req, res) => {
@@ -486,6 +519,7 @@ async function run() {
             } else {
                 blogData.status = "draft";
                 blogData.created_at = new Date().toISOString();
+                blogData.comments = [];
             }
 
             console.log(blogData);
@@ -646,7 +680,9 @@ async function run() {
             }
         });
 
-        app.patch('/like-blog', async (req, res) => {
+
+
+        app.patch('/like-blog', verifyFBToken, async (req, res) => {
             const { blogId, email } = req.body;
             // console.log(body);
             if (!blogId || !email) {
@@ -692,7 +728,35 @@ async function run() {
                 console.error("error liking blog", error);
                 res.status(500).send({ message: "error liking blog", error });
             }
-        })
+        });
+
+        app.patch('/blog/:id/add-comment', verifyFBToken, async (req, res) => {
+            const { email, comment } = req.body;
+            const { id } = req.params;
+            console.log(comment, id);
+            if (!id || !comment || !email) {
+                return res.status(400).send({ message: 'blogId or comment missing' });
+            }
+            try {
+                const update = {
+                    $push: {
+                        comments: { commented_by: email, comment, created_at: new Date().toISOString() }
+                    }
+                };
+                const result = await blogCollection.updateOne(
+                    { _id: new ObjectId(id) }, update
+                );
+                if (result.modifiedCount < 1) {
+                    return res.status(404).send({ message: 'no changes found', result });
+                }
+                res.status(201).send({ message: 'comment added.', result });
+            }
+            catch (error) {
+                console.error('error adding new comment', error);
+                res.status(500).send({ message: 'error adding new comment', error });
+            }
+        });
+
 
 
 
