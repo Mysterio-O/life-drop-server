@@ -133,9 +133,51 @@ async function run() {
             }
         });
 
+        // all users count
+        app.get('/all-users-count', verifyFBToken, verifyShared, async (req, res) => {
+            try {
+                const count = await userCollection.estimatedDocumentCount();
+                res.status(200).send(count);
+            }
+            catch (error) {
+                console.error("error getting all users count", error);
+                res.status(500).send({ message: "error getting all users count", error });
+            }
+        });
+
+        app.get('/all-users', verifyFBToken, verifyAdmin, async (req, res) => {
+            try {
+                const page = parseInt(req.query.page) || 1;
+                const limit = parseInt(req.query.limit) || 10;
+                const status = req.query.status;
+                const email = req.query.email;
+
+                const query = status && status !== 'all' ? { status } : {};
+
+                const totalUsers = await userCollection.countDocuments(query);
+                const totalPages = Math.ceil(totalUsers / limit);
+
+                const users = await userCollection.find(query)
+                    .skip((page - 1) * limit)
+                    .limit(limit)
+                    .toArray();
+                if (!users) {
+                    return res.status(404).send({ message: "users not found!" });
+                }
+
+                const usersList = users.filter(u => u?.email !== email)
+
+                res.status(200).send({ message: "users found!", users: usersList, totalPages });
+            }
+            catch (error) {
+                console.error("error getting all users", error);
+                res.status(500).send({ message: "error getting all users", error });
+            }
+        })
+
 
         // get user profile picture
-        app.get('/user/profile-picture/:email',verifyFBToken, async (req, res) => {
+        app.get('/user/profile-picture/:email', async (req, res) => {
             const { email } = req.params;
             // console.log(email);
             let userInfo = {}
@@ -185,15 +227,33 @@ async function run() {
                 console.error('error getting user role', error);
                 res.status(500).send({ message: "server error getting user role", error });
             }
+        });
+
+        app.get('/user/:email/status', verifyFBToken, async (req, res) => {
+            const { email } = req.params;
+            if (!email) {
+                return res.status(400).send({ message: 'email not found' });
+            }
+            try {
+                const user = await userCollection.findOne({ email });
+                if (!user) {
+                    return res.status(404).send({ message: 'user not found' });
+                }
+                res.status(200).send({ message: 'user status found', status: user.status });
+            }
+            catch (error) {
+                console.error('error getting user status', error);
+                res.status(500).send({ message: "server error getting user status", error });
+            }
         })
 
-        // PATCH /user/update/:id
+        // PATCH /user/update/:id (user profile update)
         app.patch('/user/update/:id', verifyFBToken, async (req, res) => {
             const userId = req.params.id;
             const updateFields = req.body;
 
             // Validate only allowed fields
-            const allowedFields = ['name', 'division', 'district', 'upazila', 'blood_group'];
+            const allowedFields = ['name', 'division', 'district', 'upazila', 'blood_group', 'photoURL', 'name'];
             const updateData = {};
 
             for (const key of allowedFields) {
@@ -225,8 +285,62 @@ async function run() {
         });
 
 
+        // PATCH user status update (admin only)
+        app.patch('/user/:id/status', verifyFBToken, verifyAdmin, async (req, res) => {
+            const { id } = req.params;
+            const { status } = req.body;
+            console.log(status, id);
+            try {
+                const filter = { _id: new ObjectId(id) };
+                const result = await userCollection.updateOne(
+                    filter,
+                    {
+                        $set: { status }
+                    }
+                );
+                res.status(201).send({ message: "status updated", result });
+            }
+            catch (error) {
+                console.error("error updating user status", error);
+                res.status(500).send({ message: "error updating user status", error });
+            }
+        });
 
-        // request apis
+
+        // PATCH user role update (admin only)
+        app.patch('/user/:id/role', verifyFBToken, verifyAdmin, async (req, res) => {
+            const { id } = req.params;
+            const { role } = req.body;
+            console.log(id, role);
+            if (!id) {
+                return res.status(400).send({ message: "user id not found" });
+            }
+            if (!role) {
+                return res.status(400).send({ message: "updated role value not found" });
+            }
+            try {
+                const result = await userCollection.updateOne(
+                    { _id: new ObjectId(id) },
+                    {
+                        $set: {
+                            role
+                        }
+                    }
+                );
+                if (result.modifiedCount < 1) {
+                    return res.status(404).send({ message: 'user role not updated', result });
+                }
+                res.status(201).send({ message: "user role updated", result });
+            }
+            catch (error) {
+                console.error("error updating user role", error);
+                res.status(500).send({ message: "error updating user role", error })
+            }
+        })
+
+
+
+        // donation request apis
         app.post('/create-request', verifyFBToken, async (req, res) => {
             const requestInfo = req.body;
             if (!requestInfo) {
@@ -277,6 +391,20 @@ async function run() {
             } catch (error) {
                 console.error('error getting donation requests', error);
                 res.status(500).send({ message: "error getting donation requests", error });
+            }
+        });
+
+
+        // donation requests count
+        app.get('/all-donation-request', async (req, res) => {
+            try {
+                const count = await requestCollection.estimatedDocumentCount();
+                console.log(count); // 20 on the console
+                res.status(200).send(count);
+            }
+            catch (error) {
+                console.error('error getting all donation request count', error);
+                res.status(500).send({ message: 'error getting all donation request count', error });
             }
         });
 
