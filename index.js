@@ -36,6 +36,7 @@ const userCollection = db.collection('users');
 const requestCollection = db.collection('requests');
 const blogCollection = db.collection('blogs');
 const fundingCollection = db.collection("funding");
+const messageCollection = db.collection('messages');
 
 
 async function run() {
@@ -1051,6 +1052,90 @@ async function run() {
             }
         });
 
+
+
+        // message apis
+
+        app.post('/contact-messages', async (req, res) => {
+            const message = req.body;
+            if (!message) {
+                return res.status(400).send({ message: 'message not found' });
+            }
+            try {
+                message.sent_at = new Date().toISOString();
+                message.status = 'unread';
+                const result = await messageCollection.insertOne(message);
+
+                if (result.insertedId) {
+                    res.status(201).send({ message: "message sent", result });
+                } else {
+                    return res.status(400).send('something went wrong. message not sent', result);
+                }
+
+            } catch (error) {
+                console.error("error posting new message", error);
+                res.status(500).send({ message: res.status(500).send({ message: "error posting new message", error }) });
+            }
+        });
+
+        app.get('/all-messages', verifyFBToken, verifyShared, async (req, res) => {
+            try {
+                const messages = await messageCollection.find({ status: 'unread' }).sort({ sent_at: -1 }).toArray();
+                if (!messages) {
+                    return res.status(404).send({ message: 'no message found' })
+                }
+                res.status(200).send({ message: "messages found", messages });
+            }
+            catch (error) {
+                console.error("error getting all messages", error);
+                res, stripe(500).send({ message: "error getting all messages", error });
+            }
+        });
+
+        app.patch('/message/:id/update', async (req, res) => {
+            const { id } = req.params;
+            if (!id) {
+                return res.status(400).send({ message: "message id not found" });
+            }
+            try {
+                const result = await messageCollection.updateOne(
+                    { _id: new ObjectId(id) },
+                    {
+                        $set: {
+                            status: 'read'
+                        }
+                    }
+                );
+                if (result.modifiedCount < 1) {
+                    return res.status(404).send({ message: 'update failed', result });
+                }
+                res.status(200).send({ message: 'status updated', result });
+            }
+            catch (error) {
+                console.error('error updating message status', error);
+                res.status(500).send({ message: 'error updating message status', error });
+            }
+        });
+
+        app.delete("/message/:id/delete", async (req, res) => {
+            const { id } = req.params;
+            if (!id) {
+                return res.status(400).send({ message: 'message id not found' });
+            }
+            try {
+                const result = await messageCollection.deleteOne({ _id: new ObjectId(id) });
+
+                if (result.deletedCount < 1) {
+                    return res.status(404).send({ message: 'something went wrong.failed to delete ,message' })
+                }
+                res.status(200).send({ message: 'deleted successfully', result });
+
+            }
+            catch (error) {
+                console.error('error deleting message', error);
+                res.status(500).send({ message: 'error deleting message', error });
+            }
+        })
 
 
         // payment intent
