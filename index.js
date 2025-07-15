@@ -7,7 +7,10 @@ const app = express()
 const port = 3000;
 
 app.use(express.json());
-app.use(cors());
+app.use(cors({
+    origin: ['https://life-drop-bd.netlify.app'],
+    credentials: true
+}));
 
 const stripe = require('stripe')(process.env.PAYMENT_GATEWAY_SECRET);
 
@@ -593,6 +596,48 @@ async function run() {
 
         });
 
+        app.patch('/donation-request/:id',verifyFBToken, async (req, res) => {
+            const { id } = req.params;
+            const updateData = req.body;
+            if (!id || !updateData) {
+                return res.status(400).send({ message: 'request id or updated data missing' });
+            }
+            try {
+                const request = await requestCollection.findOne({ _id: new ObjectId(id) });
+                if (!request) {
+                    return res.status(404).send({ message: "donation request not found" });
+                }
+
+                const allowedUpdates = ['recipientName', 'recipientNumber', 'division', 'district', 'upazila', 'hospitalName', 'address', 'bloodGroup', 'donationDate', 'donationTime', 'requestMessage'];
+
+                const updates = {};
+                allowedUpdates.forEach(field => {
+                    if (updateData[field] !== undefined) {
+                        updates[field] = updateData[field];
+                    }
+                });
+
+                updates.updatedAt = new Date().toISOString();
+                updates.status = 'pending';
+
+                const result = await requestCollection.updateOne(
+                    { _id: new ObjectId(id) },
+                    {
+                        $set: updates
+                    }
+                );
+                if (result.modifiedCount < 1) {
+                    return res.status(400).send({ message: 'update failed' });
+                }
+                res.status(201).send(result);
+
+            }
+            catch (error) {
+                console.error('error patching donation requests', error);
+                res.status(500).send({ message: 'error patching donation requests', error });
+            }
+        })
+
 
         // admin apis
 
@@ -605,6 +650,10 @@ async function run() {
 
 
         // shared controlled apis
+
+
+
+
 
         app.get('/all-blood-donation-request', verifyFBToken, verifyShared, async (req, res) => {
             try {
@@ -679,7 +728,7 @@ async function run() {
         });
 
 
-        app.get('/user-status-distribution', async (req, res) => {
+        app.get('/user-status-distribution', verifyFBToken, verifyShared, async (req, res) => {
             try {
                 const statusDistribution = await userCollection.aggregate([
                     {
@@ -1015,6 +1064,28 @@ async function run() {
             }
         });
 
+        app.get('/funding', verifyFBToken, async (req, res) => {
+            try {
+
+                const page = parseInt(req.query.page) || 1;
+                const limit = parseInt(req.query.limit) || 5;
+                const skip = (page - 1) * limit;
+
+                const totalItems = await fundingCollection.countDocuments();
+                const fundingData = await fundingCollection
+                    .find()
+                    .sort({ donated_at: -1 })
+                    .skip(skip)
+                    .limit(limit)
+                    .toArray();
+                res.status(200).json({ data: fundingData, count: totalItems });
+            }
+            catch (error) {
+                console.error('Error fetching funding data:', error);
+                res.status(500).json({ message: 'Internal server error', error: error.message });
+            }
+        })
+
 
 
 
@@ -1092,7 +1163,7 @@ async function run() {
             }
         });
 
-        app.patch('/message/:id/update', async (req, res) => {
+        app.patch('/message/:id/update', verifyFBToken, verifyShared, async (req, res) => {
             const { id } = req.params;
             if (!id) {
                 return res.status(400).send({ message: "message id not found" });
@@ -1117,7 +1188,7 @@ async function run() {
             }
         });
 
-        app.delete("/message/:id/delete", async (req, res) => {
+        app.delete("/message/:id/delete", verifyFBToken, verifyShared, async (req, res) => {
             const { id } = req.params;
             if (!id) {
                 return res.status(400).send({ message: 'message id not found' });
