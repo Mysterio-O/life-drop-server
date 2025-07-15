@@ -2,13 +2,16 @@ require('dotenv').config();
 const cors = require('cors');
 const express = require('express');
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
+const admin = require("firebase-admin");
 const app = express()
 const port = 3000;
 
 app.use(express.json());
 app.use(cors());
 
-const admin = require("firebase-admin");
+const stripe = require('stripe')(process.env.PAYMENT_GATEWAY_SECRET);
+
+
 
 const serviceAccount = require("./lifedrop-firebase-adminsdk.json");
 
@@ -32,6 +35,7 @@ const db = client.db('lifeDropDB');
 const userCollection = db.collection('users');
 const requestCollection = db.collection('requests');
 const blogCollection = db.collection('blogs');
+const fundingCollection = db.collection("funding");
 
 
 async function run() {
@@ -636,6 +640,81 @@ async function run() {
         });
 
 
+        app.get('/donation-status-distribution', verifyFBToken, verifyShared, async (req, res) => {
+            try {
+                const statusDistribution = await requestCollection.aggregate([
+                    {
+                        $match: {
+                            status: { $in: ['done', 'in_progress', 'canceled'] } // Filter relevant statuses
+                        }
+                    },
+                    {
+                        $group: {
+                            _id: '$status',
+                            count: { $sum: 1 }
+                        }
+                    },
+                    {
+                        $project: {
+                            _id: 0,
+                            name: '$_id',
+                            value: '$count'
+                        }
+                    }
+                ]).toArray();
+
+                // console.log(statusDistribution);
+
+                if (!statusDistribution) {
+                    return res.status(404).send({ message: "nof found request status" });
+                }
+
+                res.status(200).json(statusDistribution);
+
+            } catch (error) {
+                console.error('Error fetching donation status distribution:', error);
+                res.status(500).send({ message: 'Internal server error', error: error.message });
+            }
+        });
+
+
+        app.get('/user-status-distribution', async (req, res) => {
+            try {
+                const statusDistribution = await userCollection.aggregate([
+                    {
+                        $match: {
+                            status: { $in: ['active', 'blocked'] }
+                        }
+                    },
+                    {
+                        $group: {
+                            _id: '$status',
+                            count: { $sum: 1 }
+                        }
+                    },
+                    {
+                        $project: {
+                            _id: 0,
+                            status: '$_id',
+                            value: '$count'
+                        }
+                    }
+                ]).toArray();
+                console.log(statusDistribution);
+
+                if (!statusDistribution) {
+                    return res.status(404).send({ message: 'user status distribution not found' });
+                }
+
+                res.status(200).json(statusDistribution);
+
+            }
+            catch (error) {
+                console.error("error getting user count on status", error);
+                res.status(500).send({ message: "error getting user count on status", error });
+            }
+        })
+
 
         // blog apis (admin + shared)
         app.post('/create-blog', verifyFBToken, verifyShared, async (req, res) => {
@@ -887,6 +966,56 @@ async function run() {
 
 
 
+        // funding apis
+
+        app.post('/funding-payments', verifyFBToken, async (req, res) => {
+            const fundingInfo = req.body;
+            console.log(fundingInfo);
+            if (!fundingInfo) {
+                return res.status(400).send({ message: "payment info not found" });
+            }
+
+            try {
+                const result = await fundingCollection.insertOne(fundingInfo);
+                if (!result.insertedId) {
+                    return res.status(400).send("failed to add payment info in the database", result)
+                }
+                res.status(201).send({ message: "payment info added to the database", result });
+            }
+            catch (error) {
+                console.error("error adding payment info in the database", error);
+                res.status(500).send({ message: "error adding payment info in the database", error })
+            }
+
+        });
+
+
+        app.get('/all-funding', verifyFBToken, verifyShared, async (req, res) => {
+            try {
+                const totalFunding = await fundingCollection.aggregate([
+                    {
+                        $group: {
+                            _id: null,
+                            totalAmount: { $sum: '$amount' }
+                        }
+                    }
+                ]).toArray();
+                console.log("total funding", totalFunding);
+
+                if (!totalFunding.length) {
+                    return res.status(404).send({ message: 'No funding made yet or not found' });
+                }
+
+                const { totalAmount } = totalFunding[0];
+                res.status(200).send({ totalAmount });
+            } catch (error) {
+                console.error('Error getting all funding count:', error);
+                res.status(500).send({ message: 'Internal server error', error: error.message });
+            }
+        });
+
+
+
 
         // search donor api 
         app.get('/donors', async (req, res) => {
@@ -921,6 +1050,27 @@ async function run() {
                 res.status(500).send({ error: 'Internal server error' });
             }
         });
+
+
+
+        // payment intent
+
+        app.post('/create-payment-intent', async (req, res) => {
+            const amountInCents = req.body.amount;
+            console.log(amountInCents)
+            try {
+                const paymentIntent = await stripe.paymentIntents.create({
+                    amount: amountInCents,
+                    currency: 'usd',
+                    payment_method_types: ['card']
+                });
+                console.log(paymentIntent)
+                res.json({ clientSecret: paymentIntent.client_secret });
+            }
+            catch (error) {
+                res.status(500).json({ error: error.message });
+            }
+        })
 
 
 
