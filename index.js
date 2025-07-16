@@ -8,7 +8,7 @@ const port = 3000;
 
 app.use(express.json());
 app.use(cors({
-    origin: ['https://life-drop-bd.netlify.app'],
+    origin: ['https://life-drop-bd.netlify.app', 'http://localhost:5173'],
     credentials: true
 }));
 
@@ -344,6 +344,26 @@ async function run() {
                 console.error("error updating user role", error);
                 res.status(500).send({ message: "error updating user role", error })
             }
+        });
+
+
+        // delete user from database
+        app.delete("/user-delete/:email",verifyFBToken, async (req, res) => {
+            const { email } = req.params;
+            if (!email) {
+                return res.status(400).send({ message: "user email not found" });
+            }
+            try {
+                const result = await userCollection.deleteOne({ email });
+                if (result.deletedCount < 1) {
+                    return res.status(400).send("user delete failed");
+                }
+                res.status(200).send({message:'user deleted successfully',result})
+            }
+            catch (error) {
+                console.error("error deleting user", error);
+                res.status(500).send({ message: "error deleting user", error });
+            }
         })
 
 
@@ -404,7 +424,7 @@ async function run() {
 
 
         // donation requests count
-        app.get('/all-donation-request', async (req, res) => {
+        app.get('/all-donation-request',verifyFBToken,verifyShared, async (req, res) => {
             try {
                 const count = await requestCollection.estimatedDocumentCount();
                 console.log(count); // 20 on the console
@@ -596,7 +616,7 @@ async function run() {
 
         });
 
-        app.patch('/donation-request/:id',verifyFBToken, async (req, res) => {
+        app.patch('/donation-request/:id', verifyFBToken, async (req, res) => {
             const { id } = req.params;
             const updateData = req.body;
             if (!id || !updateData) {
@@ -637,12 +657,6 @@ async function run() {
                 res.status(500).send({ message: 'error patching donation requests', error });
             }
         })
-
-
-        // admin apis
-
-
-
 
 
 
@@ -818,7 +832,7 @@ async function run() {
 
         // single blog get api
 
-        app.get('/blog', async (req, res) => {
+        app.get('/blog',verifyFBToken,verifyShared, async (req, res) => {
             const { id } = req.query;
             if (!id) {
                 return res.status(400).send({ message: "blog id not found!" });
@@ -1211,7 +1225,7 @@ async function run() {
 
         // payment intent
 
-        app.post('/create-payment-intent', async (req, res) => {
+        app.post('/create-payment-intent',verifyFBToken, async (req, res) => {
             const amountInCents = req.body.amount;
             console.log(amountInCents)
             try {
