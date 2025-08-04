@@ -469,3 +469,7 @@ npm install cors dotenv express firebase-admin mongodb stripe
 
 ```bash
 npm install --save-dev nodemon
+```
+
+
+**Added to public repository**
