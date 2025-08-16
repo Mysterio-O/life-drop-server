@@ -40,6 +40,7 @@ const requestCollection = db.collection('requests');
 const blogCollection = db.collection('blogs');
 const fundingCollection = db.collection("funding");
 const messageCollection = db.collection('messages');
+const subscriberCollection = db.collection('subscribers');
 
 
 async function run() {
@@ -261,7 +262,7 @@ async function run() {
             const updateFields = req.body;
 
             // Validate only allowed fields
-            const allowedFields = ['name', 'division', 'district', 'upazila', 'blood_group', 'photoURL', 'name'];
+            const allowedFields = ['name', 'division', 'district', 'upazila', 'blood_group', 'photoURL', 'name', "number", "address"];
             const updateData = {};
 
             for (const key of allowedFields) {
@@ -523,8 +524,9 @@ async function run() {
             }
         });
 
-        app.get('/donation-request/:id', verifyFBToken, async (req, res) => {
+        app.get('/donation-request/:id', async (req, res) => {
             const { id } = req.params;
+            console.log(typeof id, id)
             if (!id) {
                 return res.status(400).send({ message: "request id not found!" })
             }
@@ -1239,6 +1241,29 @@ async function run() {
             }
             catch (error) {
                 res.status(500).json({ error: error.message });
+            }
+        });
+
+
+
+        // subscriber api
+        app.post('/newsletter-subscriptions',async(req,res)=>{
+            const {email} = req.body;
+            // console.log(email);
+            if(!email){
+                return res.status(400).json({message:"email not found"});
+            }
+            try{
+                const result = await subscriberCollection.insertOne({email});
+                if(result.insertedId){
+                    res.status(201).json(result);
+                }else{
+                    res.status(400).json({message:"subscription failed"});
+                }
+            }
+            catch(err){
+                console.error('error adding new subscriber',err);
+                res.status(500).json({message:"error while adding new subscriber"});
             }
         })
 
