@@ -41,7 +41,7 @@ const blogCollection = db.collection('blogs');
 const fundingCollection = db.collection("funding");
 const messageCollection = db.collection('messages');
 const subscriberCollection = db.collection('subscribers');
-
+const applicationCollection = db.collection('applications');
 
 async function run() {
     try {
@@ -75,7 +75,7 @@ async function run() {
         const verifyAdmin = async (req, res, next) => {
             const email = req.decoded.email;
             const result = await userCollection.findOne({ email });
-            console.log('role from admin verify middleware', result);
+            // console.log('role from admin verify middleware', result);
             if (!result || result.role !== 'admin') {
                 return res.status(403).send({ message: 'forbidden access' });
             }
@@ -122,14 +122,14 @@ async function run() {
         app.get('/user', verifyFBToken, async (req, res) => {
             try {
                 const { email } = req.query;
-                console.log('email is->', email);
+                // console.log('email is->', email);
                 let filter = {};
                 if (!email) {
                     return res.status(400).send({ message: 'email not found!' });
                 } else {
                     filter = { email };
                 }
-                console.log('filter is->', filter);
+                // console.log('filter is->', filter);
                 const user = await userCollection.findOne(filter);
                 if (!user) {
                     return res.status(404).send({ message: "User didn't found!" });
@@ -349,7 +349,7 @@ async function run() {
 
 
         // delete user from database
-        app.delete("/user-delete/:email",verifyFBToken, async (req, res) => {
+        app.delete("/user-delete/:email", verifyFBToken, async (req, res) => {
             const { email } = req.params;
             if (!email) {
                 return res.status(400).send({ message: "user email not found" });
@@ -359,7 +359,7 @@ async function run() {
                 if (result.deletedCount < 1) {
                     return res.status(400).send("user delete failed");
                 }
-                res.status(200).send({message:'user deleted successfully',result})
+                res.status(200).send({ message: 'user deleted successfully', result })
             }
             catch (error) {
                 console.error("error deleting user", error);
@@ -425,7 +425,7 @@ async function run() {
 
 
         // donation requests count
-        app.get('/all-donation-request',verifyFBToken,verifyShared, async (req, res) => {
+        app.get('/all-donation-request', verifyFBToken, verifyShared, async (req, res) => {
             try {
                 const count = await requestCollection.estimatedDocumentCount();
                 console.log(count); // 20 on the console
@@ -499,7 +499,7 @@ async function run() {
                 const skip = (page - 1) * limit;
 
                 const filter = {
-                    status: 'pending'
+                    status: { $in: ['pending', 'emergency'] }
                 };
 
                 const total = await requestCollection.countDocuments(filter);
@@ -523,6 +523,32 @@ async function run() {
                 res.status(500).send({ message: "error getting pending donation request data" });
             }
         });
+
+        app.get('/donation-requests/emergency', async (req, res) => {
+            try {
+                const page = parseInt(req.query.page);
+                const limit = parseInt(req.query.limit);
+                const skip = (page - 1) * limit;
+                const filter = { status: 'emergency' };
+                const total = await requestCollection.countDocuments(filter);
+                const requests = await requestCollection.find(filter)
+                    .sort({
+                        donationDate: 1,
+                        donationTime: 1
+                    })
+                    .skip(skip)
+                    .limit(limit)
+                    .toArray();
+                if (requests.length < 1) {
+                    return res.status(404).json({ message: 'no emergency donation request found', total: 0, result: [] });
+                }
+                res.status(200).json({ message: 'requests found', total, requests });
+            }
+            catch (err) {
+                console.error("error getting emergency donation requests", err);
+                res.status(500).json({ message: "error getting emergency donation requests" })
+            }
+        })
 
         app.get('/donation-request/:id', async (req, res) => {
             const { id } = req.params;
@@ -558,6 +584,14 @@ async function run() {
                 return res.status(400).send({ message: "status not found" });
             }
             let filter = {};
+
+            if (status === 'emergency') {
+                filter = {
+                    $set: {
+                        status: status,
+                    }
+                }
+            }
 
             if (status === 'done') {
                 filter = {
@@ -673,17 +707,17 @@ async function run() {
 
         app.get('/all-blood-donation-request', verifyFBToken, verifyShared, async (req, res) => {
             try {
-                console.log("entered");
+                // console.log("entered");
                 const status = req.query.status;
                 const page = parseInt(req.query.page) || 1;
                 const limit = parseInt(req.query.limit) || 10;
-                console.log(status);
+                // console.log(status);
                 let filter = {};
 
                 if (status && status !== 'all') {
                     filter.status = status;
                 }
-                console.log(filter)
+                // console.log(filter)
                 const totalCount = await requestCollection.countDocuments(filter);
 
                 const totalPages = Math.ceil(totalCount / limit);
@@ -834,7 +868,7 @@ async function run() {
 
         // single blog get api
 
-        app.get('/blog',verifyFBToken,verifyShared, async (req, res) => {
+        app.get('/blog', verifyFBToken, verifyShared, async (req, res) => {
             const { id } = req.query;
             if (!id) {
                 return res.status(400).send({ message: "blog id not found!" });
@@ -1227,7 +1261,7 @@ async function run() {
 
         // payment intent
 
-        app.post('/create-payment-intent',verifyFBToken, async (req, res) => {
+        app.post('/create-payment-intent', verifyFBToken, async (req, res) => {
             const amountInCents = req.body.amount;
             console.log(amountInCents)
             try {
@@ -1247,26 +1281,232 @@ async function run() {
 
 
         // subscriber api
-        app.post('/newsletter-subscriptions',async(req,res)=>{
-            const {email} = req.body;
+        app.post('/newsletter-subscriptions', async (req, res) => {
+            const { email } = req.body;
             // console.log(email);
-            if(!email){
-                return res.status(400).json({message:"email not found"});
+            if (!email) {
+                return res.status(400).json({ message: "email not found" });
             }
-            try{
-                const result = await subscriberCollection.insertOne({email});
-                if(result.insertedId){
+            try {
+                const result = await subscriberCollection.insertOne({ email });
+                if (result.insertedId) {
                     res.status(201).json(result);
-                }else{
-                    res.status(400).json({message:"subscription failed"});
+                } else {
+                    res.status(400).json({ message: "subscription failed" });
                 }
             }
-            catch(err){
-                console.error('error adding new subscriber',err);
-                res.status(500).json({message:"error while adding new subscriber"});
+            catch (err) {
+                console.error('error adding new subscriber', err);
+                res.status(500).json({ message: "error while adding new subscriber" });
             }
         })
 
+
+
+        // application apis
+        app.post('/volunteer-applications', verifyFBToken, async (req, res) => {
+            const applicationData = req.body;
+            // console.log(applicationData);
+            let data = {};
+            if (!applicationData) {
+                return res.status(400).json({ message: "application data not found" });
+            } else {
+                data = {
+                    ...applicationData,
+                    status: 'pending',
+                    createAt: new Date().toISOString()
+                }
+            }
+
+            try {
+                const result = await applicationCollection.insertOne(data);
+                if (!result.insertedId) {
+                    return res.status(404).json({ message: "application not found" });
+                }
+                res.status(201).json(result);
+            }
+            catch (err) {
+                console.error("error adding new application", err);
+                res.status(500).json({ message: "error adding new application" });
+            }
+
+        });
+
+        app.get('/volunteer-applications', verifyFBToken, verifyAdmin, async (req, res) => {
+            try {
+                const applications = await applicationCollection.find().toArray();
+                if (!applications) {
+                    return res.status(404).json({ message: "applications not found!" });
+                }
+                res.status(200).json(applications);
+            }
+            catch (err) {
+                console.error('error getting all applications', err);
+                res.status(500).json({ message: "error getting all applications" });
+            }
+        });
+
+        app.patch('/volunteer-applications/:id', verifyFBToken, verifyAdmin, async (req, res) => {
+            const { id } = req.params;
+            const { status, email } = req.body;
+            // console.log(id, status);
+            if (!id || !status || !email) {
+                return res.status(400).json({ message: 'missing information' });
+            }
+            try {
+                if (status === 'rejected') {
+                    const result = await applicationCollection.updateOne({
+                        _id: new ObjectId(id)
+                    }, {
+                        $set: {
+                            status: status
+                        }
+                    });
+                    console.log(result);
+                    if (result.modifiedCount > 0) {
+                        return res.status(201).json(result);
+                    } else {
+                        return res.status(400).json({ message: 'failed to update status' });
+                    }
+
+                };
+
+                if (status === 'accepted') {
+                    const updateApplication = await applicationCollection.updateOne(
+                        { _id: new ObjectId(id) },
+                        {
+                            $set: { status: status }
+                        }
+                    );
+
+                    if (updateApplication.modifiedCount > 0) {
+                        /**
+                         * update user role in the user collection
+                         */
+                        const updateUserRole = await userCollection.updateOne(
+                            { email },
+                            {
+                                $set: { role: 'volunteer' }
+                            }
+                        );
+                        if (updateUserRole.modifiedCount > 0) {
+                            res.status(201).json(updateUserRole);
+                        }
+                    }
+
+                }
+
+            }
+            catch (err) {
+                console.error("error updating application status", err);
+                res.status(500).json({ message: "error updating application status" });
+            }
+        });
+
+
+        // emergency request api
+        app.post('/send-emergency-request/:id', verifyFBToken, async (req, res) => {
+            const { id } = req.params;
+            const { status } = req.body;
+            if (!id) {
+                return res.status(400).json({ message: "request id not found" });
+            }
+            if (!status) {
+                return res.status(400).json({ message: "status not found!" });
+            }
+
+            try {
+                const filter = {
+                    $set: { emergencyRequest: true }
+                }
+                const result = await requestCollection.updateOne(
+                    {
+                        _id: new ObjectId(id)
+                    },
+                    filter
+                );
+                console.log(result);
+                res.status(201).json(result);
+            }
+            catch (err) {
+                console.error("error requesting for emergency", err);
+                res.status(500).json({ message: 'error requesting for emergency' });
+            }
+
+        });
+
+        app.get('/user-requests/emergency-request', async (req, res) => {
+            const { page, limit } = req.query;
+            if (!page || !limit) {
+                return res.status(400).json({ message: "missing queries" });
+            }
+            try {
+                const pageCount = parseInt(page);
+                const limitCount = parseInt(limit);
+                const skip = (pageCount - 1) * limitCount;
+                const filter = { emergencyRequest: true }
+                const total = await requestCollection.countDocuments(filter);
+                const emergencyRequests = await requestCollection.find(filter)
+                    .sort({ donationDate: 1 })
+                    .skip(skip)
+                    .limit(limitCount)
+                    .toArray();
+                if (!emergencyRequests) {
+                    return res.status(404).json({ message: "no emergency request found!" });
+                }
+                res.status(200).json({ message: 'found!', total, emergencyRequests });
+            }
+            catch (err) {
+                console.error("error getting emergency request data", err);
+                res.status(500).json({ message: "error getting emergency request data" });
+            }
+        });
+
+        app.patch('/emergency/donation-requests/:id', verifyFBToken, verifyShared, async (req, res) => {
+            const { id } = req.params;
+            const payload = req.body;
+            console.log(id);
+            if (!id) {
+                return res.status(400).json({ message: "id not found" });
+            }
+            if (!payload) {
+                return res.status(400).json({ message: "payload not found" });
+            }
+
+            try {
+                const { emergencyRequest, status } = payload;
+                let updateDoc = {};
+                if (status === 'accept') {
+                    updateDoc = {
+                        $set: {
+                            status: 'emergency',
+                            emergencyRequest
+                        }
+                    }
+                }
+                if (status === 'cancel') {
+                    updateDoc = {
+                        $set: {
+                            emergencyRequest
+                        }
+                    }
+                }
+                const result = await requestCollection.updateOne(
+                    { _id: new ObjectId(id) },
+                    updateDoc
+                );
+                // console.log(result);
+                if (!result?.modifiedCount > 0) {
+                    return res.status(400).json({ message: "emergency request update failed" });
+                };
+                res.status(201).json(result);
+            }
+            catch (err) {
+                console.error("error updating emergency request update", err);
+                res.status(500).json({ message: "error updating emergency request" });
+            }
+
+        })
 
 
 
