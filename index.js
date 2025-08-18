@@ -298,7 +298,7 @@ async function run() {
         app.patch('/user/:id/status', verifyFBToken, verifyAdmin, async (req, res) => {
             const { id } = req.params;
             const { status } = req.body;
-            console.log(status, id);
+            // console.log(status, id);
             try {
                 const filter = { _id: new ObjectId(id) };
                 const result = await userCollection.updateOne(
@@ -320,7 +320,7 @@ async function run() {
         app.patch('/user/:id/role', verifyFBToken, verifyAdmin, async (req, res) => {
             const { id } = req.params;
             const { role } = req.body;
-            console.log(id, role);
+            // console.log(id, role);
             if (!id) {
                 return res.status(400).send({ message: "user id not found" });
             }
@@ -428,7 +428,7 @@ async function run() {
         app.get('/all-donation-request', verifyFBToken, verifyShared, async (req, res) => {
             try {
                 const count = await requestCollection.estimatedDocumentCount();
-                console.log(count); // 20 on the console
+                // console.log(count); 
                 res.status(200).send(count);
             }
             catch (error) {
@@ -552,7 +552,7 @@ async function run() {
 
         app.get('/donation-request/:id', async (req, res) => {
             const { id } = req.params;
-            console.log(typeof id, id)
+            // console.log(typeof id, id)
             if (!id) {
                 return res.status(400).send({ message: "request id not found!" })
             }
@@ -575,7 +575,7 @@ async function run() {
             const { id } = req.params;
             const { status, donorMobile, donorEmail, donorName } = req.body;
 
-            console.log(status);
+            // console.log(status);
 
             if (!id) {
                 return res.status(400).send({ message: "donation request id not found" });
@@ -800,7 +800,7 @@ async function run() {
                         }
                     }
                 ]).toArray();
-                console.log(statusDistribution);
+                // console.log(statusDistribution);
 
                 if (!statusDistribution) {
                     return res.status(404).send({ message: 'user status distribution not found' });
@@ -820,7 +820,7 @@ async function run() {
         app.post('/create-blog', verifyFBToken, verifyShared, async (req, res) => {
             const blog = req.body || {};
             const blogData = { ...blog };
-            console.log('top of first condition', blogData);
+            // console.log('top of first condition', blogData);
             if (!blogData) {
                 return res.status(400).send({ message: "blog info not found" });
             } else {
@@ -829,10 +829,10 @@ async function run() {
                 blogData.comments = [];
             }
 
-            console.log(blogData);
+            // console.log(blogData);
             try {
                 const result = await blogCollection.insertOne(blogData);
-                console.log(result)
+                // console.log(result)
                 if (result.insertedId) {
                     return res.status(201).send({ message: "blog added to database", result });
                 }
@@ -936,7 +936,7 @@ async function run() {
                         $set: { ...blogData }
                     }
                 );
-                console.log('result from blog update->', result);
+                // console.log('result from blog update->', result);
                 if (!result || result.modifiedCount < 1) {
                     return res.status(404).send({ message: 'update incomplete' });
                 }
@@ -1040,7 +1040,7 @@ async function run() {
         app.patch('/blog/:id/add-comment', verifyFBToken, async (req, res) => {
             const { email, comment } = req.body;
             const { id } = req.params;
-            console.log(comment, id);
+            // console.log(comment, id);
             if (!id || !comment || !email) {
                 return res.status(400).send({ message: 'blogId or comment missing' });
             }
@@ -1070,7 +1070,7 @@ async function run() {
 
         app.post('/funding-payments', verifyFBToken, async (req, res) => {
             const fundingInfo = req.body;
-            console.log(fundingInfo);
+            // console.log(fundingInfo);
             if (!fundingInfo) {
                 return res.status(400).send({ message: "payment info not found" });
             }
@@ -1100,7 +1100,7 @@ async function run() {
                         }
                     }
                 ]).toArray();
-                console.log("total funding", totalFunding);
+                // console.log("total funding", totalFunding);
 
                 if (!totalFunding.length) {
                     return res.status(404).send({ message: 'No funding made yet or not found' });
@@ -1263,14 +1263,14 @@ async function run() {
 
         app.post('/create-payment-intent', verifyFBToken, async (req, res) => {
             const amountInCents = req.body.amount;
-            console.log(amountInCents)
+            // console.log(amountInCents)
             try {
                 const paymentIntent = await stripe.paymentIntents.create({
                     amount: amountInCents,
                     currency: 'usd',
                     payment_method_types: ['card']
                 });
-                console.log(paymentIntent)
+                // console.log(paymentIntent)
                 res.json({ clientSecret: paymentIntent.client_secret });
             }
             catch (error) {
@@ -1334,7 +1334,7 @@ async function run() {
 
         app.get('/volunteer-applications', verifyFBToken, verifyAdmin, async (req, res) => {
             try {
-                const applications = await applicationCollection.find().toArray();
+                const applications = await applicationCollection.find({status:'pending'}).toArray();
                 if (!applications) {
                     return res.status(404).json({ message: "applications not found!" });
                 }
@@ -1362,7 +1362,7 @@ async function run() {
                             status: status
                         }
                     });
-                    console.log(result);
+                    // console.log(result);
                     if (result.modifiedCount > 0) {
                         return res.status(201).json(result);
                     } else {
@@ -1425,7 +1425,7 @@ async function run() {
                     },
                     filter
                 );
-                console.log(result);
+                // console.log(result);
                 res.status(201).json(result);
             }
             catch (err) {
@@ -1465,7 +1465,7 @@ async function run() {
         app.patch('/emergency/donation-requests/:id', verifyFBToken, verifyShared, async (req, res) => {
             const { id } = req.params;
             const payload = req.body;
-            console.log(id);
+            // console.log(id);
             if (!id) {
                 return res.status(400).json({ message: "id not found" });
             }
